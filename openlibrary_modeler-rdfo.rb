@@ -2,11 +2,12 @@ require 'rubygems'
 require 'jruby/path_helper'
 require 'rdf'
 require 'rdf_objects'
-
+require 'threach'
 require 'isbn/tools'
 require 'zlib'
 require 'json'
 
+numthreads = 2
 
 class String
   def slug
@@ -27,7 +28,7 @@ class String
   
 end
 
-input_file = File.new('/Users/rosssinger/Downloads/ol_dump_2010-06-30.txt.gz', 'r')
+input_file = File.new(ARGV[0], 'r')
 file = Zlib::GzipReader.new(input_file)
 
 i = 0
@@ -170,7 +171,10 @@ class Tripler
     if data['languages']
       data['languages'].each do |lang|
         if lang['key']
-          lang_uri = "http://purl.org/NET/marccodes/languages/#{lang['key'].sub(/^\/l\//,"")}#lang"
+          lang_str = lang['key']
+          lang_str.sub!(/^\/languages\//,'')
+          lang_str.sub!(/^\/l\//,'')          
+          lang_uri = "http://purl.org/NET/marccodes/languages/#{lang_str}#lang"
           resource.relate("[dcterms:language]", lang_uri)
         end
       end
@@ -562,54 +566,51 @@ class Tripler
   
   def new_file
     @file.close if @file
-    puts "Starting new output file at openlibrary-#{@file_prefix}-#{@file_number}.nt."
+    puts "Starting new output file at openlibrary-#{@file_prefix}-#{@file_number}.nt.gz."
     @file_number += 1
-    @file = File.new("/Volumes/External/shared/open-library/openlibrary-#{@file_prefix}-#{@file_number}.nt", 'w')  
+    @file = Zlib::GzipWriter.open("#{ARGV[1]}/openlibrary-#{@file_prefix}-#{@file_number}.nt.gz")  
   end
 
 end
 
+prefix = 'a'
 
+triplers = []
 
-#j = 0
-t1 = Tripler.new('a')
-t2 = Tripler.new('b')
-t3 = Tripler.new('c')
-while line = file.gets
-  #if j < file_number
-  #  j += 1
-  #  next
-  #end
-  if t1.lines.length < 100001
-    t1.lines << line
-  elsif t2.lines.length < 100001
-    t2.lines << line
-  elsif t3.lines.length < 100001
-    t3.lines << line
-  else
-    puts "Start threading"
-    threads = []
-    [t1,t2,t3].each do |tripler|
+(1..numthreads).each do |t|
+  triplers << Tripler.new(prefix)
+  prefix = (prefix[0] + 1).chr
+end
 
-      threads << Thread.new{
-        require 'jruby/path_helper'        
-        tripler.parse_lines
-      }
+def add_to_triplers(triplers, line)
+  triplers.each do |tripler|
+    unless tripler.lines.length > 100001
+      tripler.lines << line
+      return false
     end
-    threads.each {|th| th.join }
-
-    puts "End threading"
-    t1.lines << line
   end
-
+  triplers.last.lines << line
+  true
 end
-t1.write_graph_to_file
-t1.file.close
-t2.write_graph_to_file
-t2.file.close
-t3.write_graph_to_file
-t3.file.close
 
+def start_threading(triplers)
+  puts "Start threading"
+  triplers.threach(triplers.length) do |tripler|
+    require 'jruby/path_helper'        
+    tripler.parse_lines
+  end
+  puts "End threading"
+end  
+
+
+while line = file.gets
+  start_threading(triplers) if add_to_triplers(triplers, line)
+end
+
+triplers.each do |tripler|
+  tripler.write_graph_to_file
+  tripler.file.close
+end
 
 
 
