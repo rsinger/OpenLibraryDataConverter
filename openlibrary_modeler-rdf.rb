@@ -1,9 +1,12 @@
 require 'rubygems'
-#require 'jruby/path_helper'
-require 'rdf-threadsafe'
-
-#require 'rdf_objects'
-require 'threach'
+require 'jruby/path_helper'
+require 'rdf/threadsafe'
+require 'rdf'
+require 'rdf/ntriples'
+require 'rdf/ntriples/format'
+require 'rdf/ntriples/writer'
+require 'rdf/ntriples/reader'
+require 'jruby_threach'
 require 'isbn/tools'
 require 'zlib'
 require 'json'
@@ -55,7 +58,8 @@ class Tripler
   def initialize
     #@file_prefix = prefix
     @file_number = 0
-    @graph = RDF::Graph.new
+    #@graph = RDF::Graph.new
+    @graph = []
     #new_file
     @i = 0
     @j = 0
@@ -206,7 +210,7 @@ class Tripler
     if data['isbn13']
       [*data['isbn13']].each do |isbn13|
         next if isbn13.nil? or isbn13.empty?
-	next unless ISBN_Tools.is_valid_isbn13?(isbn13)
+	#next unless ISBN_Tools.is_valid_isbn13?(isbn13)
         ISBN_Tools.cleanup!(isbn13)
         next unless ISBN_Tools.is_valid_isbn13?(isbn13)
         @graph << [resource, RDF::BIBO.isbn13, isbn13]
@@ -218,6 +222,26 @@ class Tripler
         end        
       end
     end
+    
+      if data['isbn_13']
+        [*data['isbn_13']].each do |isbn13|
+          next if isbn13.nil? or isbn13.strip.empty?
+  	#next unless ISBN_Tools.is_valid_isbn13?(isbn13)
+  	      begin
+            ISBN_Tools.cleanup!(isbn13)
+          rescue TypeError
+            next
+          end
+          next unless ISBN_Tools.is_valid_isbn13?(isbn13)
+          @graph << [resource, RDF::BIBO.isbn13, isbn13]
+          c_isbn10 = ISBN_Tools.isbn13_to_isbn10(isbn13)
+          if c_isbn10
+            @graph << [resource, RDF::BIBO.isbn10, c_isbn10]
+            @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{c_isbn10}")]
+            @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://purl.org/NET/book/isbn/#{c_isbn10}#book")]
+          end        
+        end
+      end    
     if data['url']
       [*data['url']].each do |url|
         next if url.nil? or url.empty?
@@ -343,7 +367,7 @@ class Tripler
   
     if data['title'] && !data['title'].empty?
       title = "#{data['title_prefix']}#{data['title']}"
-      @graph << [resource, RDF::RDA.titleProper, title]
+      @graph << [resource, RDF::RDA.titleProper, title.dup]
       if data['subtitle']
         title << "; #{data['subtitle']}"
       end    
@@ -657,14 +681,18 @@ class Tripler
   
   def to_ntriples
     RDF::Writer.for(:ntriples).buffer do |writer|
-      @graph.each_statement do |statement|
+      #@graph.each_statement do |statement|
+      @graph.each do |statement|
         writer << statement
       end
     end
   end    
-  
+  # def to_ntriples
+  #   @graph.to_ntriples
+  # end
   def clear_graph
-    @graph = RDF::Graph.new
+    #@graph = RDF::Graph.new
+    @graph = []
   end  
   
   def new_file
@@ -701,8 +729,8 @@ def parse_lines_or_warm_threads(tripler)
     begin
       tripler.parse_lines
       warm = true
-    rescue NameError
-      puts "Constants still not initialized"
+    rescue NameError => e
+      puts "Constants still not initialized:  #{e}"
     end
   end
 end
@@ -712,11 +740,17 @@ def start_threading(triplers)
   
   triplers.threach(triplers.length) do |tripler|
   #triplers.each do |tripler|
-    parse_lines_or_warm_threads(tripler)
+    #parse_lines_or_warm_threads(tripler)
+    tripler.parse_lines
   end
 
   triplers.each do |tripler|
-    @file << tripler.to_ntriples
+    begin
+      @file << tripler.to_ntriples
+    rescue StandardError=>e
+      puts e
+      raise
+    end      
     tripler.clear_graph
   end
   #puts "End threading"
@@ -732,7 +766,12 @@ while line = file.gets
 end
 
 triplers.each do |tripler|
-  @file << tripler.to_ntriples
+  begin
+    @file << tripler.to_ntriples
+  rescue StandardError=>e
+    puts e
+    raise
+  end
 end
 
 @file.close
