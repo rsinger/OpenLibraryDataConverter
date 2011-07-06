@@ -208,7 +208,7 @@ class Tripler
   end  
 
   def add_edition_to_graph(data)
-    resource = RDF::URI.new(URI_PREFIX+data['key'])
+    resource = RDF::URI.intern(URI_PREFIX+data['key'])
     @graph << [resource, RDF.type, RDF::BIBO.Book]
     if data['languages']
       data['languages'].each do |lang|
@@ -216,59 +216,55 @@ class Tripler
           lang_str = lang['key']
           lang_str.sub!(/^\/languages\//,'')
           lang_str.sub!(/^\/l\//,'')          
-          lang_uri = RDF::URI.new("http://purl.org/NET/marccodes/languages/#{lang_str}#lang")
+          lang_uri = RDF::URI.intern("http://purl.org/NET/marccodes/languages/#{lang_str}#lang")
           @graph << [resource, RDF::DC.language, lang_uri]
         end
       end
     end
-    if data['isbn13']
-      [*data['isbn13']].each do |isbn13|
-        next if isbn13.nil? or isbn13.empty?
-	#next unless ISBN_Tools.is_valid_isbn13?(isbn13)
-        ISBN_Tools.cleanup!(isbn13)
-        next unless ISBN_Tools.is_valid_isbn13?(isbn13)
-        @graph << [resource, RDF::BIBO.isbn13, isbn13]
-        c_isbn10 = ISBN_Tools.isbn13_to_isbn10(isbn13)
-        if c_isbn10
-          @graph << [resource, RDF::BIBO.isbn10, c_isbn10]
-          @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{c_isbn10}")]
-          @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://purl.org/NET/book/isbn/#{c_isbn}#book")]
-        end        
+    ['isbn13', 'isbn_13', 'isbn', 'isbn10', 'isbn_10'].each do |key|
+      if data[key]
+        [*data[key]].each do |isbn|
+          next unless isbn
+          next unless ISBN_Tools.is_valid_isbn10?(isbn) || ISBN_Tools.is_valid_isbn13?(isbn)
+          ISBN_Tools.cleanup!(isbn)
+          @graph << [resource, RDF::BIBO.isbn, isbn]
+          if isbn.length == 10
+            @graph << [resource, RDF::BIBO.isbn10, isbn]
+            @graph << [resource, RDF::OWL.sameAs, RDF::URI.intern("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{isbn}")]
+            @graph << [resource, RDF::OWL.sameAs, RDF::URI.intern("http://purl.org/NET/book/isbn/#{isbn}#book")]        
+            c_isbn13 = ISBN_Tools.isbn10_to_isbn13(isbn)
+            if c_isbn13    
+              @graph << [resource, RDF::BIBO.isbn13, c_isbn13]
+            end
+          elsif isbn.length == 13
+            @graph << [resource, RDF::BIBO.isbn13, isbn]
+            c_isbn10 = ISBN_Tools.isbn13_to_isbn10(isbn)
+            if c_isbn10
+              @graph << [resource, RDF::BIBO.isbn10, c_isbn10]
+              @graph << [resource, RDF::OWL.sameAs, RDF::URI.intern("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{c_isbn10}")]
+              @graph << [resource, RDF::OWL.sameAs, RDF::URI.intern("http://purl.org/NET/book/isbn/#{c_isbn}#book")]          
+            end
+          end
+        end
       end
     end
     
-      if data['isbn_13']
-        [*data['isbn_13']].each do |isbn13|
-          next if isbn13.nil? or isbn13.strip.empty?
-  	#next unless ISBN_Tools.is_valid_isbn13?(isbn13)
-  	      begin
-            ISBN_Tools.cleanup!(isbn13)
-          rescue TypeError
-            next
+    {'url'=>RDF::FOAF.page, 'uris'=>RDF::BIBO.uri}.each_pair do |key, predicate|
+      if data[key]
+        [*data[key]].each do |url|
+          next if url.nil? or url.empty?
+          begin
+            # Let's make sure there's a valid URI here first        
+            url_uri = RDF::URI.new(url)
+            url_uri.normalize!
+            u = URI.parse(url_uri.to_s)
+            @graph << [resource, predicate, uri_uri]
+          rescue   
           end
-          next unless ISBN_Tools.is_valid_isbn13?(isbn13)
-          @graph << [resource, RDF::BIBO.isbn13, isbn13]
-          c_isbn10 = ISBN_Tools.isbn13_to_isbn10(isbn13)
-          if c_isbn10
-            @graph << [resource, RDF::BIBO.isbn10, c_isbn10]
-            @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{c_isbn10}")]
-            @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://purl.org/NET/book/isbn/#{c_isbn10}#book")]
-          end        
-        end
-      end    
-    if data['url']
-      [*data['url']].each do |url|
-        next if url.nil? or url.empty?
-        begin
-          # Let's make sure there's a valid URI here first        
-          url_uri = RDF::URI.new(url)
-          url_uri.normalize!
-          u = URI.parse(url_uri.to_s)
-          @graph << [resource, RDF::FOAF.page, uri_uri]
-        rescue   
         end
       end
     end
+    
     if data['lc_classifications']
       [*data['lc_classifications']].each do |lcc|
         next if lcc.nil? or lcc.empty?
@@ -307,48 +303,49 @@ class Tripler
         @graph << [resource, RDF::DC.tableOfContents, table_of_contents.join("\n")]
       end
     end
-    if data['lccns']
-      [*data['lccns']].each do |lccn|
-        next if lccn.nil? or lccn.empty?    
-        lccn.gsub!(/[^A-z0-9]/,"")
-        @graph << [resource, RDF::BIBO.lccn, lccn]
+    
+    ['lccns', 'lccn'].each do |key|
+      if data[key]
+        [*data[key]].each do |lccn|
+          next if lccn.nil? or lccn.empty?    
+          lccn.gsub!(/[^A-z0-9]/,"")
+          @graph << [resource, RDF::BIBO.lccn, lccn]
 
-        linked_lccn = RDF::URI.new("http://purl.org/NET/lccn/#{lccn.gsub(/\s/,"").gsub(/\/.*/,"")}#i")
-        @graph << [resource, RDF::OWL.sameAs, linked_lccn]
+          linked_lccn = RDF::URI.new("http://purl.org/NET/lccn/#{lccn.gsub(/\s/,"").gsub(/\/.*/,"")}#i")
+          @graph << [resource, RDF::OWL.sameAs, linked_lccn]
+        end
       end
     end
-    if data['lccn']
-      [*data['lccn']].each do |lccn|
-        next if lccn.nil? or lccn.empty?    
-        lccn.gsub!(/[^A-z0-9]/,"")
-        @graph << [resource, RDF::BIBO.lccn, lccn]
+ 
+    
+    std_data = {
+      'subtitle'=>RDF::RDA.otherTitleInformation, 
+      'publishers'=>RDF::DC11.publisher, 
+      'copyright_date'=>RDF::DC.dateCopyrighted,
+      'other_titles'=>RDF::RDA.variantTitle,
+      'contributions'=>RDF::DC11.contributor,
+      'pagination'=>RDF::DC.extent,
+      'physical_dimensions'=>RDF::RDA.dimensions,
+      'publish_places'=>RDF::RDA.placeOfPublication,
+      'source_records'=>RDF::DC11.source,
+      'volume_number'=>RDF::BIBO.volume,
+      'number_of_pages'=>RDF::BIBO.pages,
+      'publish_date'=>RDF::DC.issued,
+      'edition_name'=>RDF::BIBO.edition,
+      'work_title'=>RDF::RDA.titleOfTheWork,
+      'by_statement'=>RDF::RDA.statementOfResponsibility,
+      'by_statements'=>RDF::RDA.statementOfResponsibility
+      }
+    
+    std_data.each_pair do |key, predicate|
+      if data[key]
+        [*data[key]].each do |value|
+          next if value.nil? or value.empty?
+          @graph << [resource, predicate, value]
+        end
+      end
+    end
 
-        linked_lccn = RDF::URI.new("http://purl.org/NET/lccn/#{lccn.gsub(/\s/,"").gsub(/\/.*/,"")}#i")
-        @graph << [resource, RDF::OWL.sameAs, linked_lccn]
-      end
-    end  
-    if data['uris']
-      [*data['uris']].each do |u|
-        next if u.nil? or u.empty?
-	      begin
-          u_uri = RDF::URI.new(u)
-          u_uri.normalize!
-          @graph << [resource, RDF::BIBO.uri, u_uri]
-	      rescue
-	        next
-	      end
-      end
-    end
-    if data['subtitle'] && !data['subtitle'].empty?
-      @graph << [resource, RDF::RDA.otherTitleInformation, data['subtitle']]
-    end
-  
-    if data['publishers']
-      [*data['publishers']].each do |publisher|
-        next if publisher.nil? or publisher.empty?
-        @graph << [resource, RDF::DC11.publisher, publisher]
-      end
-    end
     if data['authors']
       authors = []
       [*data['authors']].each do |author|
@@ -370,20 +367,12 @@ class Tripler
       end
     end
   
-    if data['copyright_date'] && !data['copyright_date'].empty?
-      @graph << [resource, RDF::DC.dateCopyrighted, data['copyright_date']]
-    end
     if data['description'] and data['description']['value'] and !data['description']['value'].empty?
       data['description']['value'].gsub!(/\f/,'f')
       data['description']['value'].gsub!(/\b/,'')      
       @graph << [resource, RDF::DC.description, data['description']['value']]
     end
-    if data['other_titles']
-      [*data['other_titles']].each do |alt|
-        next if alt.nil? or alt.empty?     
-        @graph << [resource, RDF::RDA.variantTitle, alt] 
-      end
-    end
+
   
     if data['title'] && !data['title'].empty?
       title = "#{data['title_prefix']}#{data['title']}"
@@ -393,51 +382,32 @@ class Tripler
       end    
       @graph << [resource, RDF::DC.title, title]
     end
-  
-    if data['dewey_decimal_class']
-      [*data['dewey_decimal_class']].each do |ddc|
-        next if ddc.nil? or ddc.empty?
-        ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc.slug}#class")
-        ddc_node.normalize!
-        @graph << [resource, RDF::DC.subject, ddc_node]
-        @graph << [ddc_node, RDF::DCAM.isMemberOf, RDF::DC.DDC]
-        @graph << [ddc_node, RDF.value, ddc]
-        if ddc =~ /^[0-9]{3}([^0-9]|$)/
-          ddc_o = ddc.match(/^([0-9]{3})/)[0]
-          ddc_o_u = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc_o}#scheme")
-          @graph << [ddc_o_u, RDF.type, RDF::SKOS.ConceptScheme]
-          @graph << [ddc_node, RDF::SKOS.inScheme, ddc_o_u]
-        end  
-      end
-    end
-    if data['dewry_decimal_class']
-      [*data['dewry_decimal_class']].each do |ddc|
-        next if ddc.nil? or ddc.empty?
-        ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc.slug}#class")
-        ddc_node.normalize!
-        @graph << [resource, RDF::DC.subject, ddc_node]
-        @graph << [ddc_node, RDF::DCAM.isMemberOf, RDF::DC.DDC]
-        @graph << [ddc_node, RDF.value, ddc]
-        if ddc =~ /^[0-9]{3}([^0-9]|$)/
-          ddc_o = ddc.match(/^([0-9]{3})/)[0]
-          ddc_o_u = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc_o}#scheme")
-          @graph << [ddc_o_u, RDF.type, RDF::SKOS.ConceptScheme]
-          @graph << [ddc_node, RDF::SKOS.inScheme, ddc_o_u]
+    ['dewey_decimal_class', 'dewry_decimal_class'].each do |key|
+      if data[key]
+        [*data[key]].each do |ddc|
+          next if ddc.nil? or ddc.empty?
+          ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc.slug}#class")
+          ddc_node.normalize!
+          @graph << [resource, RDF::DC.subject, ddc_node]
+          @graph << [ddc_node, RDF::DCAM.isMemberOf, RDF::DC.DDC]
+          @graph << [ddc_node, RDF.value, ddc]
+          if ddc =~ /^[0-9]{3}([^0-9]|$)/
+            ddc_o = ddc.match(/^([0-9]{3})/)[0]
+            ddc_o_u = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc_o}#scheme")
+            @graph << [ddc_o_u, RDF.type, RDF::SKOS.ConceptScheme]
+            @graph << [ddc_node, RDF::SKOS.inScheme, ddc_o_u]
+          end  
         end
       end
-    end  
+    end
+
     if data['publish_country'] && !data['publish_country'].empty?
       if data['publish_country'] =~ /^[a-z]*$/ && data['publish_country'].length < 4
         country = RDF::URI.new("http://purl.org/NET/marccodes/#{data['publish_country'].strip}#location")
         @graph << [resource, RDF::RDA.placeOfPublication, country]
       end
     end
-    if data['contributions']
-      [*data['contributions']].each do |contributor|
-        next if contributor.nil? or contributor.empty?
-        @graph << [resource, RDF::DC11.contributor, contributor]
-      end
-    end
+
     if data['oclc_numbers']
       [*data['oclc_numbers']].each do |oclc_num|
         next if oclc_num.nil? or oclc_num.empty?
@@ -449,17 +419,6 @@ class Tripler
           @graph << [resource, RDF::FOAF.page, wc]
         end
       end
-    end
-  
-    if data['pagination']
-      [*data['pagination']].each do |pagination|
-        next if pagination.nil? or pagination.empty?   
-        @graph << [resource, RDF::DC.extent, pagination]   
-      end
-    end
-  
-    if data['physical_dimensions'] && !data['physical_dimensions'].empty?  
-      @graph << [resource, RDF::RDA.dimensions, data['physical_dimensions']]  
     end
   
     if data['volumes']
@@ -492,12 +451,6 @@ class Tripler
       @graph << [resource, RDF::FOAF.page, "http://www.archive.org/details/#{data['ocaid'].strip}"]
     end
   
-    if data['publish_places']
-      [*data['publish_places']].each do |place|
-        next if place.nil? or place.empty?
-        @graph << [resource, RDF::RDA.placeOfPublication, place]
-      end
-    end
   
     if data['notes']
       [*data['notes']].each do |note|
@@ -513,48 +466,7 @@ class Tripler
         end
       end
     end
-  
-    if data['source_records']
-      [*data['source_records']].each do | source |
-        next if source.nil? or source.empty?
-        @graph << [resource, RDF::DC11.source, source]
-      end
-    end
-  
-    if data['volume_number']
-      @graph << [resource, RDF::BIBO.volume, data['volume_number']]
-    end
-  
-    if data['isbn'] && !data['isbn'].empty?
-      [*data['isbn']].each do |isbn|
-        next unless isbn
-        next unless ISBN_Tools.is_valid_isbn10?(isbn) || ISBN_Tools.is_valid_isbn13?(isbn)
-        ISBN_Tools.cleanup!(isbn)
-        @graph << [resource, RDF::BIBO.isbn, isbn]
-        if isbn.length == 10
-          @graph << [resource, RDF::BIBO.isbn10, isbn]
-          @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{isbn}")]
-          @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://purl.org/NET/book/isbn/#{isbn}#book")]        
-          c_isbn13 = ISBN_Tools.isbn10_to_isbn13(isbn)
-          if c_isbn13    
-            @graph << [resource, RDF::BIBO.isbn13, c_isbn13]
-          end
-        elsif isbn.length == 13
-          @graph << [resource, RDF::BIBO.isbn13, isbn]
-          c_isbn10 = ISBN_Tools.isbn13_to_isbn10(isbn)
-          if c_isbn10
-            @graph << [resource, RDF::BIBO.isbn10, c_isbn10]
-            @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{c_isbn10}")]
-            @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://purl.org/NET/book/isbn/#{c_isbn}#book")]          
-          end
-        end
-      end
-    end
-  
-    if data['number_of_pages']
-      @graph << [resource, RDF::BIBO.pages, data['number_of_pages']]
-    end
-  
+      
     if data['oclc_number'] && !data['oclc_number'].empty?
       [*data['oclc_number']].each do |onum|
         next unless onum
@@ -564,49 +476,7 @@ class Tripler
         @graph << [resource, RDF::FOAF.page, wc]
       end    
     end
-  
-  
-    if data['publish_date'] && !data['publish_date'].empty?
-      @graph << [resource, RDF::DC.issued, data['publish_date']]
-    end
-  
-    if data['edition_name'] && !data['edition_name'].empty?
-      @graph << [resource, RDF::BIBO.edition, data['edition_name']]
-    end
-  
-    if data['isbn_10']
-      [*data['isbn_10']].each do | isbn10 |
-        next if isbn10.nil? or isbn10.empty?
-	next unless ISBN_Tools.is_valid_isbn10?(isbn10)
-        ISBN_Tools.cleanup!(isbn10) if isbn10
-        @graph << [resource, RDF::BIBO.isbn10, isbn10]
-        @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{isbn10}")]
-        @graph << [resource, RDF::OWL.sameAs, RDF::URI.new("http://purl.org/NET/book/isbn/#{isbn10}#book")]
-        c_isbn13 = ISBN_Tools.isbn10_to_isbn13(isbn10)
-        if c_isbn13      
-          @graph << [resource, RDF::BIBO.isbn13, c_isbn13]
-        end
-      end
-    end
-  
-    if data['work_title']
-      [*data['work_title']].each do |work_title|
-        next if work_title.nil? or work_title.empty?
-        @graph << [resource, RDF::RDA.titleOfTheWork, work_title]
-      end
-    end
-  
-    if data['by_statement'] && !data['by_statement'].empty?
-      @graph << [resource, RDF::RDA.statementOfResponsibility, data['by_statement']]
-    end
-  
-    if data['by_statements']
-      [*data['by_statements']].each do |by|
-        next if by.nil? or by.empty?
-        @graph << [resource, RDF::RDA.statementOfResponsibility, by]
-      end    
-    end  
-  
+    
     if data['works']
       [*data['works']].each do |work|
         next if work.nil? or work.empty?
