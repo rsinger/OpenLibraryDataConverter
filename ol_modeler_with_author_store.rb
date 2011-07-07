@@ -54,12 +54,14 @@ URI_PREFIX = "http://openlibrary.org"
 LCSH_LABEL_LOCATION = "/Users/rossfsinger/tmp/lcsh_labels.nt"
 DB = Rufus::Tokyo::Tyrant.new("127.0.0.1", 1978)
 DB.clear
-RDF::Reader.open("/Users/rossfsinger/tmp/lcsh_labels.nt") do | reader |
-  reader.each_statement do |stmt|
-    DB[stmt.object.value] = stmt.subject.to_s
+if ARGV[2]
+  RDF::NTriples::Reader.open(ARGV[2]) do | reader |
+    reader.each_statement do |stmt|
+      next unless stmt.predicate == RDF::SKOS.prefLabel || stmt == RDF::SKOS.altLabel
+      DB[stmt.object.value] = stmt.subject.to_s
+    end
   end
 end
-
 
 class Tripler
   attr_reader :file_prefix, :file_number, :file, :graph, :bad_graph
@@ -242,7 +244,7 @@ class Tripler
             if c_isbn10
               @graph << [resource, RDF::BIBO.isbn10, c_isbn10]
               @graph << [resource, RDF::OWL.sameAs, RDF::URI.intern("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{c_isbn10}")]
-              @graph << [resource, RDF::OWL.sameAs, RDF::URI.intern("http://purl.org/NET/book/isbn/#{c_isbn}#book")]          
+              @graph << [resource, RDF::OWL.sameAs, RDF::URI.intern("http://purl.org/NET/book/isbn/#{c_isbn10}#book")]          
             end
           end
         end
@@ -309,6 +311,7 @@ class Tripler
         [*data[key]].each do |lccn|
           next if lccn.nil? or lccn.empty?    
           lccn.gsub!(/[^A-z0-9]/,"")
+          lccn.gsub!(/\^/,"")
           @graph << [resource, RDF::BIBO.lccn, lccn]
 
           linked_lccn = RDF::URI.new("http://purl.org/NET/lccn/#{lccn.gsub(/\s/,"").gsub(/\/.*/,"")}#i")
@@ -340,7 +343,7 @@ class Tripler
     std_data.each_pair do |key, predicate|
       if data[key]
         [*data[key]].each do |value|
-          next if value.nil? or value.empty?
+          next if value.nil? or (value.respond_to?(:empty?) && value.empty?)
           @graph << [resource, predicate, value]
         end
       end
@@ -353,12 +356,6 @@ class Tripler
         a = RDF::URI.new("http://openlibrary.org#{author['key']}")
         @graph << [resource, RDF::DC.creator, a]
         authors << a
-        if author = DB[author['key']]
-          author.split("||").each do |aut|
-            @graph << [resource, RDF::OL.author, aut]
-          end
-          @graph << [resource, RDF::DC11.creator, author.split("||").first]
-        end          
       end
       # We only need an author list if we have more than one author
       if authors.length > 1
@@ -433,9 +430,6 @@ class Tripler
         next if subject.nil? or subject.empty?
         if subject.is_a?(String)
           @graph << [resource, RDF::DC11.subject, subject]
-          if subj = DB[subject]
-            @graph << [resource, RDF::DC.subject, RDF::URI.intern(subj)]
-          end
         elsif subject.is_a?(Hash) && subject['key'] && !(subject['key'].nil? || subject['key'].empty?)
           @graph << [resource, RDF::DC.subject, RDF::URI.new(URI_PREFIX+subject['key'])]
         end
@@ -508,10 +502,7 @@ class Tripler
       [*data['subjects']].each do | subject |
         next if subject.nil? or subject.empty?
         if subject.is_a?(String)
-          @graph << [resource, RDF::DC11.subject, subject]
-          if subj = DB[subject]
-            @graph << [resource, RDF::DC.subject, RDF::URI.intern(subj)]
-          end          
+          @graph << [resource, RDF::DC11.subject, subject]        
         elsif subject.is_a?(Hash) && subject['key'] && !(subject['key'].nil? || subject['key'].empty?)
           @graph << [resource, RDF::DC.subject, RDF::URI.new(URI_PREFIX+subject['key'])]
         end
@@ -528,12 +519,6 @@ class Tripler
         @graph << [resource, RDF::DC.creator, a]
         @graph << [a, RDF::FOAF.made, resource]
         authors << a
-        if author = DB[au['author']['key']]
-          author.split("||").each do |aut|
-            @graph << [resource, RDF::OL.author, aut]
-          end
-          @graph << [resource, RDF::DC11.creator, author.split("||").first]
-        end
       end
       # We only need an author list if we have more than one author
       if authors.length > 1
@@ -566,47 +551,22 @@ class Tripler
       else
         next
       end
- 
     end
     @lines = [] 
   end  
   
-  def write_graph_to_file
-    ntriples = RDF::Writer.for(:ntriples).buffer do |writer|
-      @graph.each_statement do |statement|
-        writer << statement
-      end
-    end
-    @file << ntriples
-    @graph = RDF::Graph.new
-  end
-  
   def to_ntriples
     RDF::Writer.for(:ntriples).buffer do |writer|
-      #@graph.each_statement do |statement|
       @graph.each do |statement|
         writer << statement
       end
     end
   end    
-  # def to_ntriples
-  #   @graph.to_ntriples
-  # end
+
   def clear_graph
-    #@graph = RDF::Graph.new
     @graph = []
   end  
-  
-  def new_file
-    @file.close if @file
-    puts "Starting new output file at openlibrary-#{DateTime.now.strftime("%Y-%m-%d")}-#{@file_number}.nt.gz."
-    @file_number += 1
-    @file = Zlib::GzipWriter.open("#{ARGV[1]}/openlibrary-#{DateTime.now.strftime("%Y-%m-%d")}-#{@file_number}.nt.gz")  
-  end
-
 end
-
-
 
 triplers = []
 @file = Zlib::GzipWriter.open("#{ARGV[1]}/openlibrary-#{DateTime.now.strftime("%Y-%m-%d")}.nt.gz") 
@@ -642,8 +602,8 @@ def start_threading(triplers)
   
   triplers.threach(triplers.length) do |tripler|
   #triplers.each do |tripler|
-    #parse_lines_or_warm_threads(tripler)
-    tripler.parse_lines
+    parse_lines_or_warm_threads(tripler)
+    #tripler.parse_lines
   end
 
   triplers.each do |tripler|
