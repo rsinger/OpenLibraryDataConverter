@@ -51,7 +51,7 @@ end
 
 
 URI_PREFIX = "http://openlibrary.org"
-LCSH_LABEL_LOCATION = "/Users/rossfsinger/tmp/lcsh_labels.nt"
+
 DB = Rufus::Tokyo::Tyrant.new("127.0.0.1", 1978)
 DB.clear
 if ARGV[2]
