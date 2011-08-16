@@ -52,7 +52,7 @@ module OpenLibrary
         if DB.sismember("pending", @data['key'])
           val.split("||").each do |creation|
             name_strings.each do |name|
-              add(RDF::URI.intern(creation), RDF::OL.author, name)
+              add(RDF::URI.new(creation), RDF::OL.author, name)
             end
           end
           DB.srem "pending", @data['key']
@@ -95,7 +95,7 @@ module OpenLibrary
       return if @data['website'].empty?
       if url = Util.sanitize_url(@data['website'])
         begin
-          hp = RDF::URI.intern(url)
+          hp = RDF::URI.new(url)
           hp.normalize!
           u = URI.parse(hp.to_s)
           return if hp.relative?
@@ -127,13 +127,13 @@ module OpenLibrary
         next if wik.nil? or wik.empty?
         next unless w = Util.sanitize_url(wik)
         begin
-          wp = RDF::URI.intern(w)
+          wp = RDF::URI.new(w)
           wp.normalize!
           u = URI.parse(wp.to_s)
           return if wp.relative?
           add(@uri, RDF::FOAF.isPrimaryTopicOf, wp)
           if wp.host =~ /wikipedia\.org/
-            dbpedia = RDF::URI.intern(wp.to_s)
+            dbpedia = RDF::URI.new(wp.to_s)
             dbpedia.host = "dbpedia.org"
             dbpedia.path.sub!(/\/wiki\//,"/resource/")
             add(@uri, RDF::OWL.sameAs, dbpedia)
@@ -157,11 +157,17 @@ module OpenLibrary
     
     def parse_links
       return if @data['links'].empty?
-      if @data['links'].is_a?(Array)
-        @data['links'].each do |link|
-          if link.is_a?(Hash)
-            if link['url']
-              add(@uri, RDF::FOAF.page, link['url'])
+      [*@data['links']].each do |link|
+        next unless link        
+        if link.is_a?(Hash)
+          if link['url']
+            begin
+              lnk = RDF::URI.new(link['url'])
+              lnk.normalize!
+              u = URI.parse(lnk.to_s)
+              return if lnk.relative?
+              add(@uri, RDF::FOAF.page, lnk)
+            rescue
             end
           end
         end

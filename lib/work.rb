@@ -16,21 +16,33 @@ module OpenLibrary
       end
     end
 
-    def parse_title(title)
-      return if title.empty?
-      add(@uri, RDF::DC.title, title)
+    def parse_title(t)
+      unless t.empty?
+        title = "#{t}"
+        add(@uri, RDF::RDA.titleProper, title.dup)
+        if @data['subtitle']
+          title << "; #{@data['subtitle']}"
+        end    
+        add(@uri, RDF::DC.title, title)
+      end
+    end
+    
+    def parse_subtitle(subtitle)
+      unless subtitle.empty?
+        add(@uri, RDF::RDA.otherTitleInformation, subtitle)
+      end
     end
 
     def parse_subjects(subjects)  
 
       [*subjects].each do | subject |
-        next if subject.nil? or subject.empty? or subject == "."
+        next if subject.nil? or subject.empty? or subject == "."  or subject == " "
         if subject.is_a?(String)
           add(@uri, RDF::DC11.subject, subject)
           subject_string = subject.strip_trailing_punct
           subject_string.gsub!(/\s?--\s?/,"--")
           if subject_uri = DB.get(subject_string)
-            add(@uri, RDF::DC.subject, RDF::URI.intern(subject_uri))
+            add(@uri, RDF::DC.subject, RDF::URI.new(subject_uri))
           end               
         elsif subject.is_a?(Hash) && subject['key'] && !(subject['key'].nil? || subject['key'].empty?)
           add(@uri, RDF::DC.subject, RDF::URI.new(URI_PREFIX+subject['key']))
@@ -39,6 +51,9 @@ module OpenLibrary
       end
 
     end
+    
+    alias :parse_subject_places :parse_subjects
+    alias :parse_subject_people :parse_subjects
 
     def parse_first_publish_date(pub_date)
       return if pub_date.empty?
