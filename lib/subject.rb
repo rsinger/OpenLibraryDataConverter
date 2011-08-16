@@ -23,8 +23,8 @@ module OpenLibrary
     def parse_created(created)
       add(@uri, RDF::DC.created, DateTime.parse(created['value']))
     end
-    def parse_modified(modified)
-      add(uri, RDF::DC.modified, DateTime.parse(modified['value']))
+    def parse_last_modified(modified)
+      add(@uri, RDF::DC.modified, DateTime.parse(modified['value']))
     end
   end
 end

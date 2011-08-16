@@ -1,0 +1,1 @@
+/type/subject	/subjects/Word_formation	1	2009-10-15T15:17:23.372937	{"name": "Word formation", "created": {"type": "/type/datetime", "value": "2009-10-15T15:17:23.372937"}, "last_modified": {"type": "/type/datetime", "value": "2009-10-15T15:17:23.372937"}, "latest_revision": 1, "key": "/subjects/Word_formation", "type": {"key": "/type/subject"}, "revision": 1}
