@@ -289,6 +289,7 @@ module OpenLibrary
           subject_string = subject.strip_trailing_punct
           subject_string.gsub!(/\s?--\s?/,"--")
           if subject_uri = DB.get(subject_string)
+            puts subject_uri
             add(@uri, RDF::DC.subject, RDF::URI.new(subject_uri))
           end          
         elsif subject.is_a?(Hash) && subject['key'] && !(subject['key'].nil? || subject['key'].empty?)

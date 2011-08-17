@@ -91,7 +91,51 @@ module OpenLibrary
       end    
     end
     
+    def parse_description(desc)
+      if desc['value'] and !desc['value'].empty?
+        desc['value'].gsub!(/\f/,'f')
+        desc['value'].gsub!(/\b/,'')      
+        add(@uri, RDF::DC.description, desc['value'])
+      end
+    end      
 
+    def parse_lc_classifications(lc_class)
+      [*lc_class].each do |lcc|
+        next if lcc.nil? or lcc.empty?
+        lcc.gsub!(/\\/,' ')
+        lcc.strip!
+        lcc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/lcc/#{lcc.slug}#class")
+        lcc_node.normalize!
+        add(@uri, RDF::DC.subject, lcc_node)
+        add(lcc_node, RDF::DCAM.isMemberOf, RDF::DC.LCC)
+
+        add(lcc_node, RDF.value, lcc)
+        if lcc.upcase =~ /^[A-Z]{1,3}(\s?[1-9][0-9]*|$)/
+          lcco = lcc.upcase.match(/^([A-Z]{1,3})/)[1]
+          lcco_u = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/lcc/#{lcco}#scheme")
+          add(lcco_u, RDF.type, RDF::SKOS.ConceptScheme)
+          add(lcc_node, RDF::SKOS.inScheme, lcco_u)
+        end
+      end            
+    end
+    
+    def parse_dewey_number(ddcs)
+      [*ddcs].each do |ddc|
+        next if ddc.nil? or ddc.empty?
+        ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc.slug}#class")
+        ddc_node.normalize!
+        add(@uri, RDF::DC.subject, ddc_node)
+        add(ddc_node, RDF::DCAM.isMemberOf, RDF::DC.DDC)
+        add(ddc_node, RDF.value, ddc)
+        if ddc =~ /^[0-9]{3}([^0-9]|$)/
+          ddc_o = ddc.match(/^([0-9]{3})/)[0]
+          ddc_o_u = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc_o}#scheme")
+          add(ddc_o_u, RDF.type, RDF::SKOS.ConceptScheme)
+          add(ddc_node, RDF::SKOS.inScheme, ddc_o_u)
+        end  
+      end
+    end   
+       
     def parse_covers(covers)
       [*covers].each do |cover|
         next if cover.nil?

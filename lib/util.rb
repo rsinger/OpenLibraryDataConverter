@@ -25,7 +25,8 @@ class Util
   def self.load_lcsh(path)
     RDF::Reader.open(path) do | reader |
       reader.each_statement do |stmt|
-        next unless stmt.predicate == RDF::SKOS.prefLabel || stmt.predicate == RDF::SKOS.altLabel
+        next unless stmt.subject.is_a?(RDF::URI)
+        next unless stmt.predicate == RDF::SKOS.prefLabel || stmt.predicate == RDF::SKOS.altLabel || stmt.predicate == RDF::URI.intern("http://www.loc.gov/mads/rdf/v1#authoritativeLabel")
         next if stmt.object.to_s.match("/authorities/sj")
         DB.set stmt.object.value, stmt.subject.to_s
       end

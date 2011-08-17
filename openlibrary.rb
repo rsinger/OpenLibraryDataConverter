@@ -9,6 +9,11 @@ module OpenLibrary
     @uri = RDF::URI.new("#{URI_PREFIX}#{@data['key']}")
     @uri.normalize!
   end
+  
+  def uri
+    return @uri
+  end
+  
   def add(s, p, o)
     @statements << RDF::Statement.new(s, p, o)
   end  
