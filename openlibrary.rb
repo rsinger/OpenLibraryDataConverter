@@ -1,4 +1,5 @@
 module OpenLibrary
+  require 'cgi'
   require File.dirname(__FILE__) + '/lib/util'
   require File.dirname(__FILE__) + '/lib/author'
   require File.dirname(__FILE__) + '/lib/edition'

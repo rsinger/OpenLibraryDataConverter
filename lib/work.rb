@@ -54,6 +54,7 @@ module OpenLibrary
     
     alias :parse_subject_places :parse_subjects
     alias :parse_subject_people :parse_subjects
+    alias :parse_subject_times :parse_subjects
 
     def parse_first_publish_date(pub_date)
       return if pub_date.empty?
@@ -104,7 +105,7 @@ module OpenLibrary
         next if lcc.nil? or lcc.empty?
         lcc.gsub!(/\\/,' ')
         lcc.strip!
-        lcc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/lcc/#{lcc.slug}#class")
+        lcc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/lcc/#{CGI.escape(lcc)}#class")
         lcc_node.normalize!
         add(@uri, RDF::DC.subject, lcc_node)
         add(lcc_node, RDF::DCAM.isMemberOf, RDF::DC.LCC)
@@ -122,7 +123,7 @@ module OpenLibrary
     def parse_dewey_number(ddcs)
       [*ddcs].each do |ddc|
         next if ddc.nil? or ddc.empty?
-        ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc.slug}#class")
+        ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{CGI.escape(ddc)}#class")
         ddc_node.normalize!
         add(@uri, RDF::DC.subject, ddc_node)
         add(ddc_node, RDF::DCAM.isMemberOf, RDF::DC.DDC)

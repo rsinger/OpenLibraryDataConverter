@@ -261,9 +261,10 @@ describe "OpenLibrary Author" do
     resource.statements.each do |stmt|    
       next unless stmt.subject == uri
       next unless stmt.predicate == RDF::FOAF.depiction
-      photos << stmt
+      photos << stmt.object
     end    
     photos.length.should ==(6)
+    photos.should include(RDF::URI.new("http://covers.openlibrary.org/a/id/6257044-M.jpg"))
   end
   
   it "should model the author's links" do

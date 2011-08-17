@@ -27,6 +27,18 @@ def resource_from_file(file_path)
   resource
 end
 
+def follow_list(graph, subject)
+  stmts = []
+  rest = nil
+  graph.query(:subject=>subject).each do |stmt|
+    stmts << stmt
+    if stmt.predicate == RDF.rest
+      rest = stmt.object
+    end
+  end
+  {:statements=>stmts, :next=>rest}
+end
+
 def match_triples(statements, queries)
   remaining = queries.length
   queries.each do |query|
@@ -107,27 +119,80 @@ describe "OpenLibrary Work" do
       end
     end
     auth_list.should be_kind_of(RDF::Node)
-    
-    while stmts = graph.query(:subject=>auth_list)
-      stmts.each do |stmt|
+    while list = follow_list(graph, auth_list)
+      list[:statements].each do |stmt|
         if stmt.predicate == RDF.first
-          @authors.first.should ==(stmt.object)
-          @authors.delete(stmt.object)
-        elsif stmt.predicate == RDF.rest
-          auth_list = stmt.predicate
-          break if auth_list == RDF.nil
-        end
-      end      
+          authors.first.should ==(stmt.object)
+          authors.delete(stmt.object)
+        end        
+      end
+      break if list[:next] == RDF.nil
+      auth_list = list[:next]
     end
-    @authors.should be_empty
+
+    authors.should be_empty
   end
   
   it "should model the work's subjects" do
+    uris = [RDF::URI.new("http://id.loc.gov/authorities/subjects/sh85124233"), RDF::URI.new("http://id.loc.gov/authorities/subjects/sh85026255"),
+       RDF::URI.new("http://id.loc.gov/authorities/subjects/sh85061212"), RDF::URI.new("http://id.loc.gov/authorities/subjects/sh2001008850"),
+       RDF::URI.new("http://id.loc.gov/authorities/names/n79007233"), RDF::URI.new("http://id.loc.gov/authorities/names/n80001244")]
+    DB.set("Sociology, Urban", uris[0].to_s)
+    DB.set("City and town life", uris[1].to_s)
+    DB.set("History", uris[2].to_s)
+    DB.set("Social conditions", uris[3].to_s)
+    DB.set("Canada", uris[4].to_s)
+    DB.set("Québec (Province)", uris[5].to_s)
+
     resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL11928803W.txt")
     resource.parse_data    
-    subjects = ["City and town life", "History", "Social conditions", "Sociology, Urban", "Urban Sociology", "To 1763", "To 1763 (New France)", "Canada", "Qu\u00e9bec (Province)"]
+    subjects = ["City and town life", "History", "Social conditions", "Sociology, Urban", "Urban Sociology", "To 1763", "To 1763 (New France)", "Canada", "Québec (Province)"]
+
     resource.statements.each do |stmt|
       next unless stmt.subject == resource.uri
       next unless stmt.predicate == RDF::DC11.subject
+      subjects.should include(stmt.object.value)
+      subjects.delete(stmt.object.value)
+    end
+    subjects.should be_empty    
+    resource.statements.each do |stmt|
+      next unless stmt.subject == resource.uri
+      next unless stmt.predicate == RDF::DC.subject
+      next if stmt.object =~ /stores\/openlibrary\/items\// # skip LCC and DDC for now
+      uris.should include(stmt.object)
+      uris.delete(stmt.object)
+    end    
+    uris.should be_empty
+  end
+  
+  it "should model the work's description" do
+    resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL100126W.txt")
+    resource.parse_data    
+    match_triples(resource.statements, [{:subject=>resource.uri, :predicate=>RDF::DC.description, :object=>"After Cuno Masseys business partner is murdered by a gang of outlaws, he takes to the trail to find the killers. But Cunos mission of vengeance becomes a rescue mission when he learns that the outlaws have kidnapped a young Chinese woman"}]).should be_true
+  end
+  
+  it "should model the work's LC classification number" do
+    resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL2506185W.txt")
+    resource.parse_data    
+    match_triples(resource.statements, [{:subject=>resource.uri, :predicate=>RDF::DC.subject, :object=>RDF::URI.intern("http://api.talis.com/stores/openlibrary/items/lcc/LB1131+.B4#class")}]).should be_true
+  end
+  
+  it "should model the work's Dewey number" do
+    resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL2506185W.txt")
+    resource.parse_data    
+    match_triples(resource.statements, [{:subject=>resource.uri, :predicate=>RDF::DC.subject, :object=>RDF::URI.intern("http://api.talis.com/stores/openlibrary/items/ddc/155.4%2F13#class")}]).should be_true    
+  end
+  
+  it "should model the work's book cover" do
+    resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL2506185W.txt")
+    resource.parse_data  
+    covers = []    
+    resource.statements.each do |stmt|    
+      next unless stmt.subject == resource.uri
+      next unless stmt.predicate == RDF::FOAF.depiction
+      covers << stmt.object
+    end    
+    covers.length.should ==(3)    
+    covers.should include(RDF::URI.new("http://covers.openlibrary.org/w/id/5614028-S.jpg"))    
   end
 end
