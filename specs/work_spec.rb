@@ -89,7 +89,7 @@ describe "OpenLibrary Work" do
   end
   
   it "should model the work's authors" do
-    resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL11928803W.txt")
+    resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL2506185W.txt")
     resource.parse_data
     authors = [RDF::URI.intern("http://openlibrary.org/authors/OL352128A"), RDF::URI.intern("http://openlibrary.org/authors/OL6893618A")]  
     match_triples(resource.statements, [{:subject=>resource.uri, :predicate=>RDF::DC.creator, :object=>authors.first}]).should be_true
@@ -120,5 +120,14 @@ describe "OpenLibrary Work" do
       end      
     end
     @authors.should be_empty
+  end
+  
+  it "should model the work's subjects" do
+    resource = resource_from_file(File.dirname(__FILE__) + "/data/work_OL11928803W.txt")
+    resource.parse_data    
+    subjects = ["City and town life", "History", "Social conditions", "Sociology, Urban", "Urban Sociology", "To 1763", "To 1763 (New France)", "Canada", "Qu\u00e9bec (Province)"]
+    resource.statements.each do |stmt|
+      next unless stmt.subject == resource.uri
+      next unless stmt.predicate == RDF::DC11.subject
   end
 end
