@@ -17,7 +17,7 @@ module OpenLibrary
         'publish_places'=>RDF::RDA.placeOfPublication,
         'source_records'=>RDF::DC11.source,
         'volume_number'=>RDF::BIBO.volume,
-        'number_of_pages'=>RDF::BIBO.pages,
+        'number_of_pages'=>RDF::BIBO.numPages,
         'publish_date'=>RDF::DC.issued,
         'edition_name'=>RDF::BIBO.edition,
         'work_title'=>RDF::RDA.titleOfTheWork,
@@ -53,7 +53,7 @@ module OpenLibrary
         next unless isbn
         next unless ISBN_Tools.is_valid_isbn10?(isbn) || ISBN_Tools.is_valid_isbn13?(isbn)
         ISBN_Tools.cleanup!(isbn)
-        add(@uri, RDF::BIBO.isbn, isbn)
+       add(@uri, RDF::BIBO.isbn, isbn)       
         if isbn.length == 10
           add(@uri, RDF::BIBO.isbn10, isbn)
           add(@uri, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{isbn}"))
@@ -61,12 +61,14 @@ module OpenLibrary
           c_isbn13 = ISBN_Tools.isbn10_to_isbn13(isbn)
           if c_isbn13    
             add(@uri, RDF::BIBO.isbn13, c_isbn13)
+            add(@uri, RDF::BIBO.isbn, c_isbn13)
           end
         elsif isbn.length == 13
           add(@uri, RDF::BIBO.isbn13, isbn)
           c_isbn10 = ISBN_Tools.isbn13_to_isbn10(isbn)
           if c_isbn10
             add(@uri, RDF::BIBO.isbn10, c_isbn10)
+            add(@uri, RDF::BIBO.isbn, c_isbn10)
             add(@uri, RDF::OWL.sameAs, RDF::URI.new("http://www4.wiwiss.fu-berlin.de/bookmashup/books/#{c_isbn10}"))
             add(@uri, RDF::OWL.sameAs, RDF::URI.new("http://purl.org/NET/book/isbn/#{c_isbn10}#book"))          
           end
@@ -88,18 +90,18 @@ module OpenLibrary
           url_uri.normalize!
           u = URI.parse(url_uri.to_s)
           return if url_uri.relative?
-          add(@uri, predicate, uri_uri)
-        rescue   
+          add(@uri, predicate, url_uri)
+        rescue
         end
       end      
     end
     
     def parse_url(url)
-      parse_uri(url, RDF::FOAF.Page)
+      parse_uri(url, RDF::FOAF.page)
     end
     
     def parse_uris(uri)
-      parse_uri(uri, RDF::BIBO.uri)
+      parse_uri(uri, RDF::URI.new("http://purl.org/ontology/bibo/uri"))
     end
     
     def parse_lc_classifications(lc_class)
@@ -107,7 +109,7 @@ module OpenLibrary
         next if lcc.nil? or lcc.empty?
         lcc.gsub!(/\\/,' ')
         lcc.strip!
-        lcc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/lcc/#{lcc.slug}#class")
+        lcc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/lcc/#{CGI.escape(lcc)}#class")
         lcc_node.normalize!
         add(@uri, RDF::DC.subject, lcc_node)
         add(lcc_node, RDF::DCAM.isMemberOf, RDF::DC.LCC)
@@ -198,6 +200,18 @@ module OpenLibrary
         end
       end
     end
+    
+    def parse_contributors(contribs)
+      [*contribs].each do |contrib|
+        next unless contrib && contrib.is_a?(Hash) && contrib['name'] && !contrib['name'].empty?
+        if contrib['role'] && contrib['role'] == "Author"
+          add(@uri, RDF::DC11.creator, contrib['name'])
+          add(@uri, RDF::OL.author, contrib['name'])          
+        else
+          add(@uri, RDF::DC11.contributor, contrib['name'])
+        end
+      end
+    end
 
     def parse_description(desc)
       if desc['value'] and !desc['value'].empty?
@@ -227,7 +241,7 @@ module OpenLibrary
     def parse_dewey_decimal_class(ddcs)
       [*ddcs].each do |ddc|
         next if ddc.nil? or ddc.empty?
-        ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{ddc.slug}#class")
+        ddc_node = RDF::URI.new("http://api.talis.com/stores/openlibrary/items/ddc/#{CGI.escape(ddc)}#class")
         ddc_node.normalize!
         add(@uri, RDF::DC.subject, ddc_node)
         add(ddc_node, RDF::DCAM.isMemberOf, RDF::DC.DDC)
@@ -246,7 +260,7 @@ module OpenLibrary
     def parse_publish_country(pub_country)
       return if pub_country.empty?
       if pub_country =~ /^[a-z]*$/ && pub_country.length < 4
-        country = RDF::URI.new("http://purl.org/NET/marccodes/#{pub_country.strip}#location")
+        country = RDF::URI.new("http://purl.org/NET/marccodes/countries/#{pub_country.strip}#location")
         add(@uri, RDF::RDA.placeOfPublication, country)
       end
     end
@@ -289,7 +303,6 @@ module OpenLibrary
           subject_string = subject.strip_trailing_punct
           subject_string.gsub!(/\s?--\s?/,"--")
           if subject_uri = DB.get(subject_string)
-            puts subject_uri
             add(@uri, RDF::DC.subject, RDF::URI.new(subject_uri))
           end          
         elsif subject.is_a?(Hash) && subject['key'] && !(subject['key'].nil? || subject['key'].empty?)
@@ -312,7 +325,7 @@ module OpenLibrary
       #  add(@uri, RDF::DC.hasFormat, RDF::URI.new("http://www.archive.org/download/#{data['ocaid'].strip}/#{data['ocaid'].strip}.#{fmt}")]
       #end
       #add(@uri, RDF::DC.hasFormat, RDF::URI.new("http://www.archive.org/download/#{data['ocaid'].strip}/#{data['ocaid'].strip}_djvu.txt")]
-      add(@uri, RDF::FOAF.page, "http://www.archive.org/details/#{ocaid.strip}")
+      add(@uri, RDF::FOAF.page, RDF::URI.new("http://www.archive.org/details/#{ocaid.strip}"))
     end
 
     def parse_notes(notes)
