@@ -5,6 +5,7 @@ require 'rdf/threadsafe'
 require 'jruby_threach'
 require 'redis'
 require 'isbn/tools'
+require 'openlibrary'
 
 i = 0
 
@@ -32,6 +33,7 @@ if ARGV[0] && ARGV[1]
 
     queue << resource if resource
     if queue.length > 1000
+      #queue.each do |r|
       queue.threach(3) do |r|
         r.parse_data
       end
