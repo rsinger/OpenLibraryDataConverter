@@ -1,8 +1,8 @@
 require 'rubygems'
 require 'json'
 require 'zlib'
-require 'rdf/threadsafe'
-require 'jruby_threach'
+require 'rdf'
+require 'rdf/ntriples'
 require 'redis'
 require 'isbn/tools'
 require 'openlibrary'
@@ -33,8 +33,7 @@ if ARGV[0] && ARGV[1]
 
     queue << resource if resource
     if queue.length > 1000
-      #queue.each do |r|
-      queue.threach(3) do |r|
+      queue.each do |r|
         r.parse_data
       end
       queue.each do |r|
